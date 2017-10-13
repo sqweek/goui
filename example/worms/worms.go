@@ -13,9 +13,19 @@ import (
 	"github.com/sqweek/goui/wdedrv"
 )
 
+// for dumping out frames
+/*import (
+	"fmt"
+	"image/png"
+	"os"
+)*/
+
 type World struct {
 	width, height int
 }
+
+var world = World{400, 300}
+var WORMS = 8192
 
 func main() {
 	go func() {
@@ -82,9 +92,6 @@ func (d Direction) Turn(way int) Direction {
 	return Direction(n)
 }
 
-var world = World{320, 240}
-var WORMS = 8192
-
 func wdemain() {
 	rand.Seed(time.Now().UnixNano())
 	w, err := wde.NewWindow(world.width, world.height)
@@ -99,6 +106,21 @@ func wdemain() {
 	}
 	world.randPt()
 	go painter.Loop()
+	// for dumping out frames
+	/*go func() {
+		i := 0
+		nxt := func() (*os.File, error) {
+			i += 1
+			return os.Create(fmt.Sprintf("img%05d.png", i))
+		}
+		enc := png.Encoder{png.BestSpeed}
+		f, _ := nxt()
+		for _ = range time.Tick(33333333) {
+			enc.Encode(f, w.Screen())
+			f.Close()
+			f, _ = nxt()
+		}
+	}()*/
 	events: for ei := range w.EventChan() {
 		switch e := ei.(type) {
 		case wde.KeyEvent:
@@ -163,6 +185,9 @@ func (w *Worm) turn(way int) {
 }
 
 type DrawWormCmd struct {
+	// Referencing the actual Worm is dodgy as because if we
+	// enqueue multiple DrawWormCmds before the first gets
+	// painted, the state is shared (effectively skipping frames)
 	w Worm
 	col color.Color
 }
