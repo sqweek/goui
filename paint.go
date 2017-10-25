@@ -3,6 +3,7 @@ package goui
 import (
 	"image"
 	"image/draw"
+	"runtime"
 )
 
 type DrawCmd interface {
@@ -10,6 +11,13 @@ type DrawCmd interface {
 	Partial() bool
 	Paint(dst draw.Image)
 }
+
+type flushCmd struct{}
+func (f flushCmd) Bounds() image.Rectangle { return image.ZR }
+func (f flushCmd) Partial() bool { return true }
+func (f flushCmd) Paint(dst draw.Image) { }
+
+var Flush = flushCmd{}
 
 type DrawImg struct {
 	r image.Rectangle
@@ -38,15 +46,20 @@ type PaintDrv interface {
 }
 
 func MakePainter(drv PaintDrv) Painter {
-	return Painter{screen: drv, cmds: make(chan DrawCmd)}
+	return Painter{screen: drv, queue: &CoalescingQueue{}, cmds: make(chan DrawCmd)}
 }
 
 type Painter struct {
-	screen PaintDrv 
+	screen PaintDrv
+	queue PaintQueue
 	cmds chan DrawCmd
-	pending []DrawCmd
-	pBounds image.Rectangle
 }
+
+type PaintQueue interface {
+	Add(cmd DrawCmd)
+	Drain() ([]DrawCmd, image.Rectangle)
+}
+
 
 func (p *Painter) Queue(cmd DrawCmd) {
 	p.cmds <- cmd
@@ -54,62 +67,59 @@ func (p *Painter) Queue(cmd DrawCmd) {
 
 func (p *Painter) Loop() {
 	// TODO ¿split coalescing into separate goroutine with configurable refresh rate, and change p.cmds to []DrawCmd?
+	runtime.LockOSThread()
 	for {
 		cmd, ok := <-p.cmds
 		if !ok {
 			return
 		}
-		p.add(cmd)
-		for {
-			if p.drain() == 0 {
-				break
-			}
-		}
-		dst := p.screen.Img()
-		p.exec(dst)
-		p.screen.Flip()
-	}
-}
-
-func (p *Painter) drain() (n int) {
-	for {
-		select {
-		case cmd := <-p.cmds:
-			p.add(cmd)
-			n++
-		default:
-			return n
+		if cmd == Flush {
+			cmds, _ := p.queue.Drain()
+			dst := p.screen.Img()
+			p.exec(cmds, dst)
+			p.screen.Flip()
+		} else {
+			p.queue.Add(cmd)
 		}
 	}
 }
 
-// adds a command to the pending list, possibly rendering previous commands superflous
-func (p *Painter) add(cmd DrawCmd) {
-	first := (p.pending == nil)
-	if !first && !cmd.Partial() && cmd.Bounds().Overlaps(p.pBounds) {
-		// Clear previous commands which are obscured
-		for i, c := range p.pending {
-			if c != nil && c.Bounds().In(cmd.Bounds()) {
-				p.pending[i] = nil
-			}
-		}
-	}
-	p.pending = append(p.pending, cmd)
-	if first {
-		p.pBounds = cmd.Bounds()
-	} else {
-		p.pBounds = p.pBounds.Union(cmd.Bounds())
-	}
-}
-
-// executes pending commands and clears pending list
-func (p *Painter) exec(dst draw.Image) {
-	for _, cmd := range p.pending {
+func (p *Painter) exec(cmds []DrawCmd, dst draw.Image) {
+	for _, cmd := range cmds {
 		if cmd != nil {
 			cmd.Paint(dst)
 		}
 	}
-	p.pending = nil
-	p.pBounds = image.ZR // does this need to be retained for flip()?
 }
 
+type CoalescingQueue struct {
+	pending []DrawCmd
+	pBounds image.Rectangle
+}
+
+// adds a command to the pending list, possibly rendering previous commands superflous
+func (q *CoalescingQueue) Add(cmd DrawCmd) {
+	first := (q.pending == nil)
+	if !first && !cmd.Partial() && cmd.Bounds().Overlaps(q.pBounds) {
+		// Clear previous commands which are obscured
+		for i, c := range q.pending {
+			if c != nil && c.Bounds().In(cmd.Bounds()) {
+				q.pending[i] = nil
+			}
+		}
+	}
+	q.pending = append(q.pending, cmd)
+	if first {
+		q.pBounds = cmd.Bounds()
+	} else {
+		q.pBounds = q.pBounds.Union(cmd.Bounds())
+	}
+}
+
+// executes pending commands and clears pending list
+func (q *CoalescingQueue) Drain() (cmds []DrawCmd, bounds image.Rectangle) {
+	cmds, bounds = q.pending, q.pBounds
+	q.pending = nil
+	q.pBounds = image.ZR
+	return
+}
