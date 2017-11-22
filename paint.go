@@ -19,12 +19,18 @@ func (f flushCmd) Paint(dst draw.Image) { }
 
 var Flush = flushCmd{}
 
+func Draw(r image.Rectangle, src image.Image, sp image.Point, op draw.Op) DrawCmd {
+	return DrawImg{r, src, sp, op}
+}
+
+func DrawMask(r image.Rectangle, src image.Image, sp image.Point, mask image.Image, mp image.Point, op draw.Op) DrawCmd {
+	return DrawImgMask{DrawImg{r, src, sp, op}, mask, mp}
+}
+
 type DrawImg struct {
 	r image.Rectangle
 	src image.Image
 	sp image.Point
-	mask image.Image
-	mp image.Point
 	op draw.Op
 }
 
@@ -33,10 +39,24 @@ func (d DrawImg) Bounds() image.Rectangle {
 }
 
 func (d DrawImg) Partial() bool {
-	return false
+	return d.op == draw.Over
 }
 
 func (d DrawImg) Paint(dst draw.Image) {
+	draw.Draw(dst, d.r, d.src, d.sp, d.op)
+}
+
+type DrawImgMask struct {
+	DrawImg
+	mask image.Image
+	mp image.Point
+}
+
+func (d DrawImgMask) Partial() bool {
+	return true
+}
+
+func (d DrawImgMask) Paint(dst draw.Image) {
 	draw.DrawMask(dst, d.r, d.src, d.sp, d.mask, d.mp, d.op)
 }
 
