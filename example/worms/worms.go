@@ -206,16 +206,41 @@ func (w *Worm) turn(way int) {
 }
 
 type DrawWormCmd struct {
-	// Referencing the actual Worm is dodgy as because if we
-	// enqueue multiple DrawWormCmds before the first gets
-	// painted, the state is shared (effectively skipping frames)
-	w Worm
+	pts []image.Point
 	col color.Color
 }
 
+func DrawWormRaster(w Worm, col color.Color) goui.DrawCmd {
+	img := image.NewRGBA(bounds(w.pts))
+	for _, pt := range w.pts {
+		img.Set(pt.X, pt.Y, col)
+	}
+	return goui.Draw(img.Bounds(), img, img.Bounds().Min, draw.Over)
+}
+
+func DrawWormLazy(w Worm, col color.Color) goui.DrawCmd {
+	pts := make([]image.Point, len(w.pts))
+	copy(pts, w.pts)
+
+	return DrawWormCmd{pts, col}
+}
+
+// Referencing the actual Worm.pts is dodgy as because if we
+// enqueue multiple DrawWormCmds before the first gets
+// painted, the state is shared (effectively skipping frames)
+func DrawWormRacy(w Worm, col color.Color) goui.DrawCmd {
+	return DrawWormCmd{w.pts, col}
+}
+
+var DrawWorm = DrawWormRaster
+
 func (d DrawWormCmd) Bounds() image.Rectangle {
-	r := image.Rectangle{Min: d.w.pts[0], Max: d.w.pts[0]}
-	for _, pt := range d.w.pts {
+	return bounds(d.pts)
+}
+
+func bounds(pts []image.Point) image.Rectangle {
+	r := image.Rectangle{Min: pts[0], Max: pts[0]}
+	for _, pt := range pts {
 		if pt.X < r.Min.X {
 			r.Min.X = pt.X
 		} else if pt.X + 1 > r.Max.X {
@@ -244,7 +269,7 @@ func (d DrawWormCmd) ColorModel() color.Model {
 }
 
 func (d DrawWormCmd) At(x, y int) color.Color {
-	for _, pt := range d.w.pts {
+	for _, pt := range d.pts {
 		if pt.X == x && pt.Y == y {
 			return d.col
 		}
@@ -272,6 +297,6 @@ func worm(painter goui.Painter) {
 		worm.advance()
 		time.Sleep(speed)
 		worm.turn(rand.Intn(3) - 1)
-		painter.Queue(DrawWormCmd{worm, col})
+		painter.Queue(DrawWorm(worm, col))
 	}	
 }
