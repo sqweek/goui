@@ -13,6 +13,12 @@ import (
 	"github.com/sqweek/goui/wdedrv"
 )
 
+// for profiling
+import (
+	"runtime/pprof"
+	"os"
+)
+
 // for dumping out frames
 /*import (
 	"fmt"
@@ -126,6 +132,10 @@ func wdemain() {
 			painter.Queue(goui.Flush)//, goui.Draw(image.Rect(0,0,world.width,world.height), &image.Uniform{color.Black}, image.ZP, draw.Src))
 		}
 	}()
+	// for profiling
+	f, _ := os.Create("worms.pprof")
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
 	events: for ei := range w.EventChan() {
 		switch e := ei.(type) {
 		case wde.KeyEvent:
