@@ -160,6 +160,7 @@ func (w World) ContainsY(y int) bool {
 
 type Worm struct {
 	pts []image.Point
+	tail int
 	dir Direction
 	//speed
 }
@@ -172,26 +173,31 @@ func randWorm(world World) Worm {
 	worm.pts = append(worm.pts, world.randPt())
 	for len(worm.pts) < cap(worm.pts) {
 		worm.advance()
+		worm.turn(rand.Intn(3) - 1)
 	}
 	return worm
 }
 
 func (w *Worm) advance() {
+	n := len(w.pts)
+	head := (w.tail + n - 1) % n
+	newhead := w.tail
 	if len(w.pts) < cap(w.pts) {
 		w.pts = append(w.pts, image.Point{0, 0})
+		newhead = len(w.pts) - 1
+	} else {
+		w.tail = (w.tail + 1) % n
 	}
-	n := len(w.pts)
-	copy(w.pts[1:n], w.pts[0:n-1])
-	w.pts[0] = w.dir.Advance(w.pts[1])
+	w.pts[newhead] = w.dir.Advance(w.pts[head])
 	reflect := false
-	if !world.ContainsX(w.pts[0].X) {
+	if !world.ContainsX(w.pts[newhead].X) {
 		w.dir, reflect = w.dir.ReflectX(), true
 	}
-	if !world.ContainsY(w.pts[0].Y) {
+	if !world.ContainsY(w.pts[newhead].Y) {
 		w.dir, reflect = w.dir.ReflectY(), true
 	}
 	if reflect {
-		w.pts[0] = w.dir.Advance(w.pts[1])
+		w.pts[newhead] = w.dir.Advance(w.pts[head])
 	}
 }
 
