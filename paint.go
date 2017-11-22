@@ -66,13 +66,13 @@ type PaintDrv interface {
 }
 
 func MakePainter(drv PaintDrv) Painter {
-	return Painter{screen: drv, queue: &CoalescingQueue{}, cmds: make(chan DrawCmd)}
+	return Painter{screen: drv, queue: &CoalescingQueue{}, cmds: make(chan []DrawCmd)}
 }
 
 type Painter struct {
 	screen PaintDrv
 	queue PaintQueue
-	cmds chan DrawCmd
+	cmds chan []DrawCmd
 }
 
 type PaintQueue interface {
@@ -81,25 +81,27 @@ type PaintQueue interface {
 }
 
 
-func (p *Painter) Queue(cmd DrawCmd) {
-	p.cmds <- cmd
+func (p *Painter) Queue(cmds ...DrawCmd) {
+	p.cmds <- cmds
 }
 
 func (p *Painter) Loop() {
 	// TODO ¿split coalescing into separate goroutine with configurable refresh rate, and change p.cmds to []DrawCmd?
 	runtime.LockOSThread()
 	for {
-		cmd, ok := <-p.cmds
+		cmds, ok := <-p.cmds
 		if !ok {
 			return
 		}
-		if cmd == Flush {
-			cmds, _ := p.queue.Drain()
-			dst := p.screen.Img()
-			p.exec(cmds, dst)
-			p.screen.Flip()
-		} else {
-			p.queue.Add(cmd)
+		for _, cmd := range cmds {
+			if cmd == Flush {
+				enqueued, _ := p.queue.Drain()
+				dst := p.screen.Img()
+				p.exec(enqueued, dst)
+				p.screen.Flip()
+			} else {
+				p.queue.Add(cmd)
+			}
 		}
 	}
 }
