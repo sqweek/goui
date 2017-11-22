@@ -121,6 +121,11 @@ func wdemain() {
 			f, _ = nxt()
 		}
 	}()*/
+	go func() {
+		for _ = range time.Tick(16666666) {
+			painter.Queue(goui.Flush)//, goui.Draw(image.Rect(0,0,world.width,world.height), &image.Uniform{color.Black}, image.ZP, draw.Src))
+		}
+	}()
 	events: for ei := range w.EventChan() {
 		switch e := ei.(type) {
 		case wde.KeyEvent:
